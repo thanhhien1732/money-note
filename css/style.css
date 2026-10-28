@@ -828,12 +828,45 @@ a:hover {
 .table-footer {
   display: flex;
   justify-content: center;
-  padding-top: 4px;
+  align-items: center;
+  padding-top: 14px;
 }
 
 .tx-count-label {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.btn-see-all {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: var(--radius-btn);
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-see-all:hover {
+  text-decoration: none;
+  color: #1E40AF;
+}
+
+[data-theme="dark"] .btn-see-all {
+  color: #60A5FA;
+}
+
+[data-theme="dark"] .btn-see-all:hover {
+  text-decoration: none;
+  color: #93C5FD;
 }
 
 /* Empty State */

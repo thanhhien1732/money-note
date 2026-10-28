@@ -45,6 +45,8 @@ const STORAGE_KEYS = {
   THEME: 'moneynote_theme'
 };
 
+const DEFAULT_VISIBLE_LIMIT = 8;
+
 const state = {
   transactions: [],
   selectedYear: 2026,
@@ -56,7 +58,8 @@ const state = {
   formType: 'expense',
   selectedCategoryName: '',
   editingId: null,
-  deletingId: null
+  deletingId: null,
+  showAllTransactions: false
 };
 
 // ==========================================================================
@@ -465,17 +468,13 @@ function renderCategoryFilterDropdown() {
 // Render bảng danh sách giao dịch (F3)
 function renderTransactionsTable() {
   const tbody = document.getElementById('transactions-table-body');
-  const countLabel = document.getElementById('tx-total-count');
+  const footerContainer = document.getElementById('table-footer');
   if (!tbody) return;
 
   const list = getFilteredTransactions();
+  const total = list.length;
 
-  if (countLabel) {
-    const filterInfo = state.filterCategory !== 'all' ? ` [${state.filterCategory}]` : '';
-    countLabel.textContent = `Hiển thị ${list.length} giao dịch${filterInfo}`;
-  }
-
-  if (list.length === 0) {
+  if (total === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="5">
@@ -489,10 +488,15 @@ function renderTransactionsTable() {
         </td>
       </tr>
     `;
+    if (footerContainer) footerContainer.innerHTML = '';
     return;
   }
 
-  tbody.innerHTML = list.map(t => {
+  // Giới hạn 8 giao dịch nếu chưa bấm "Xem tất cả"
+  const shouldLimit = !state.showAllTransactions && total > DEFAULT_VISIBLE_LIMIT;
+  const displayList = shouldLimit ? list.slice(0, DEFAULT_VISIBLE_LIMIT) : list;
+
+  tbody.innerHTML = displayList.map(t => {
     const meta = getCategoryMeta(t.category);
     const isIncome = t.type === 'income';
     const sign = isIncome ? '+' : '−';
@@ -530,6 +534,41 @@ function renderTransactionsTable() {
       </tr>
     `;
   }).join('');
+
+  // Cập nhật Footer: Nút "Xem tất cả ... giao dịch" hoặc "Thu gọn"
+  if (footerContainer) {
+    if (total > DEFAULT_VISIBLE_LIMIT) {
+      if (!state.showAllTransactions) {
+        footerContainer.innerHTML = `
+          <button type="button" class="btn-see-all" id="btn-toggle-see-all">
+            Xem tất cả ${total} giao dịch
+          </button>
+        `;
+      } else {
+        footerContainer.innerHTML = `
+          <button type="button" class="btn-see-all" id="btn-toggle-see-all">
+            Thu gọn danh sách
+          </button>
+        `;
+      }
+
+      const btnSeeAll = footerContainer.querySelector('#btn-toggle-see-all');
+      if (btnSeeAll) {
+        btnSeeAll.addEventListener('click', () => {
+          state.showAllTransactions = !state.showAllTransactions;
+          renderTransactionsTable();
+          if (!state.showAllTransactions && typeof document.querySelector === 'function') {
+            const section = document.querySelector('.transactions-section');
+            if (section && typeof section.scrollIntoView === 'function') {
+              section.scrollIntoView({ behavior: 'smooth' });
+            }
+          }
+        });
+      }
+    } else {
+      footerContainer.innerHTML = `<span class="tx-count-label">Hiển thị ${total} giao dịch</span>`;
+    }
+  }
 
   // Bắt sự kiện Sửa / Xóa
   tbody.querySelectorAll('.btn-action-edit').forEach(btn => {
@@ -1087,8 +1126,9 @@ function changeMonth(delta) {
     state.selectedYear -= 1;
   }
 
-  // Reset category filter khi chuyển tháng
+  // Reset category filter & see-all khi chuyển tháng
   state.filterCategory = 'all';
+  state.showAllTransactions = false;
   renderAll();
 }
 
@@ -1228,6 +1268,7 @@ function setupEventListeners() {
       filterTypeButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.filterType = btn.dataset.type || 'all';
+      state.showAllTransactions = false;
       renderTransactionsTable();
     });
   });
@@ -1237,6 +1278,7 @@ function setupEventListeners() {
   if (filterCatSelect) {
     filterCatSelect.addEventListener('change', (e) => {
       state.filterCategory = e.target.value;
+      state.showAllTransactions = false;
       renderTransactionsTable();
       renderCategoryStats();
     });
@@ -1247,6 +1289,7 @@ function setupEventListeners() {
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       state.searchQuery = e.target.value;
+      state.showAllTransactions = false;
       renderTransactionsTable();
     });
   }
