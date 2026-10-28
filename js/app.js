@@ -1,10 +1,16 @@
 /**
  * MoneyNote – Ứng dụng ghi chép thu chi cá nhân
- * Part 2: Xử lý dữ liệu cốt lõi & chức năng CRUD (LocalStorage)
+ * Part 3: Hoàn thiện toàn diện các tính năng nâng cao
+ * - CRUD & LocalStorage
+ * - Bộ lọc đa chiều & Tìm kiếm ghi chú không dấu
+ * - Quản lý Hạn mức Ngân sách & Hệ thống Cảnh báo tự động
+ * - Thống kê Phân bổ Chi tiêu & Biểu đồ tỷ lệ %
+ * - Xuất file Excel / CSV chuẩn UTF-8 BOM tiếng Việt
+ * - Chế độ tối (Dark mode) & Thông báo Toast tương tác
  */
 
 // ==========================================================================
-// 1. Cấu hình danh mục chuẩn & Bảng màu
+// 1. Cấu hình Danh mục & Bảng màu
 // ==========================================================================
 const CATEGORY_CONFIG = {
   expense: [
@@ -24,8 +30,8 @@ const CATEGORY_CONFIG = {
   ]
 };
 
-// Map tra cứu nhanh màu sắc theo tên danh mục
 const ALL_CATEGORIES = [...CATEGORY_CONFIG.expense, ...CATEGORY_CONFIG.income];
+
 function getCategoryMeta(name) {
   return ALL_CATEGORIES.find(c => c.name === name) || { bg: '#F1F5F9', fg: '#334155', ini: 'K' };
 }
@@ -42,8 +48,8 @@ const STORAGE_KEYS = {
 const state = {
   transactions: [],
   selectedYear: 2026,
-  selectedMonth: 10, // 1-12
-  budgets: {}, // { '2026-10': 6000000 }
+  selectedMonth: 10,
+  budgets: {},
   filterType: 'all', // 'all' | 'income' | 'expense'
   filterCategory: 'all',
   searchQuery: '',
@@ -136,7 +142,7 @@ function getSampleTransactions(year, month) {
       category: 'Học bổng',
       date: `${year}-${m}-15`,
       paymentMethod: 'Chuyển khoản',
-      note: 'Học bổng kỳ 1',
+      note: 'Học bổng sinh viên giỏi kỳ 1',
       createdAt: new Date(`${year}-${m}-15T08:30:00`).getTime()
     },
     {
@@ -162,7 +168,6 @@ function getSampleTransactions(year, month) {
   ];
 }
 
-// Tải dữ liệu từ LocalStorage
 function loadDataFromStorage() {
   const rawTx = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
   const rawBudgets = localStorage.getItem(STORAGE_KEYS.BUDGETS);
@@ -174,7 +179,6 @@ function loadDataFromStorage() {
       state.budgets = {};
     }
   } else {
-    // Ngân sách mặc định tháng 10/2026: 6.000.000 ₫
     state.budgets = { [`${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}`]: 6000000 };
     saveBudgetsToStorage();
   }
@@ -186,7 +190,6 @@ function loadDataFromStorage() {
       state.transactions = [];
     }
   } else {
-    // Lần đầu mở: nạp sẵn 10 giao dịch mẫu
     state.transactions = getSampleTransactions(state.selectedYear, state.selectedMonth);
     saveTransactionsToStorage();
   }
@@ -210,7 +213,6 @@ function formatVND(amount) {
 
 function parseCurrencyInput(value) {
   if (!value) return 0;
-  // Loại bỏ tất cả ký tự không phải số
   const clean = String(value).replace(/[^0-9]/g, '');
   return clean ? parseInt(clean, 10) : 0;
 }
@@ -226,6 +228,46 @@ function formatDateDisplay(dateStr) {
 
 function getCurrentMonthKey() {
   return `${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}`;
+}
+
+// Chuyển chuỗi tiếng Việt có dấu thành không dấu để tìm kiếm tiện lợi
+function removeVietnameseDiacritics(str) {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
+}
+
+// Hệ thống Toast Notification
+function showToast(message, type = 'success') {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+
+  let iconSvg = '';
+  if (type === 'success') {
+    iconSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+  } else if (type === 'warning') {
+    iconSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+  } else {
+    iconSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+  }
+
+  toast.innerHTML = `${iconSvg}<span>${message}</span>`;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
 }
 
 // ==========================================================================
@@ -249,13 +291,19 @@ function getFilteredTransactions() {
     list = list.filter(t => t.category === state.filterCategory);
   }
 
-  // Lọc theo từ khóa ghi chú
+  // Lọc theo từ khóa ghi chú (hỗ trợ cả có dấu và không dấu)
   if (state.searchQuery.trim()) {
-    const q = state.searchQuery.trim().toLowerCase();
-    list = list.filter(t => t.note && t.note.toLowerCase().includes(q));
+    const rawQ = state.searchQuery.trim().toLowerCase();
+    const cleanQ = removeVietnameseDiacritics(rawQ);
+
+    list = list.filter(t => {
+      const rawNote = (t.note || '').toLowerCase();
+      const cleanNote = removeVietnameseDiacritics(rawNote);
+      return rawNote.includes(rawQ) || cleanNote.includes(cleanQ);
+    });
   }
 
-  // Sắp xếp: Ngày mới nhất lên đầu, nếu cùng ngày thì theo thời gian tạo
+  // Sắp xếp: Mới nhất lên đầu
   return list.sort((a, b) => {
     if (b.date !== a.date) {
       return b.date.localeCompare(a.date);
@@ -298,7 +346,6 @@ function renderAll() {
   renderCategoryStats();
 }
 
-// Render tiêu đề tháng
 function renderMonthHeader() {
   const monthDisplay = document.getElementById('current-month-display');
   if (monthDisplay) {
@@ -311,7 +358,6 @@ function renderMonthHeader() {
   }
 }
 
-// Render thẻ thống kê (Tổng thu, chi, số dư)
 function renderOverviewStats() {
   const { totalIncome, totalExpense, balance, incomeCount, expenseCount } = calculateMonthTotals();
 
@@ -329,7 +375,7 @@ function renderOverviewStats() {
   if (elExpenseCount) elExpenseCount.textContent = `${expenseCount} khoản chi`;
 }
 
-// Render Widget Ngân sách tháng
+// Render Widget Ngân sách tháng & Cảnh báo (F8)
 function renderBudgetWidget() {
   const { totalExpense } = calculateMonthTotals();
   const monthKey = getCurrentMonthKey();
@@ -346,20 +392,28 @@ function renderBudgetWidget() {
 
   if (limit <= 0) {
     if (elBar) elBar.style.width = '0%';
-    if (alertText) alertText.textContent = 'Chưa đặt hạn mức ngân sách cho tháng này. Bấm "Đặt hạn mức" để quản lý chi tiêu!';
+    if (alertText) alertText.textContent = 'Chưa đặt hạn mức ngân sách tháng này. Bấm "Đặt hạn mức" để quản lý chi tiêu!';
     if (alertBox) {
       alertBox.style.display = 'flex';
       alertBox.style.backgroundColor = 'var(--bg-control)';
       alertBox.style.color = 'var(--text-secondary)';
+      alertBox.style.borderColor = 'var(--border-color)';
     }
     return;
   }
 
-  const pct = Math.min(Math.round((totalExpense / limit) * 100), 100);
+  const pct = Math.round((totalExpense / limit) * 100);
   const remaining = limit - totalExpense;
 
+  // Tính số ngày còn lại trong tháng
+  const today = new Date();
+  const daysInMonth = new Date(state.selectedYear, state.selectedMonth, 0).getDate();
+  const isCurrentCalendarMonth = today.getFullYear() === state.selectedYear && (today.getMonth() + 1) === state.selectedMonth;
+  const daysLeft = isCurrentCalendarMonth ? Math.max(0, daysInMonth - today.getDate()) : daysInMonth;
+  const daysText = daysLeft > 0 ? ` cho ${daysLeft} ngày còn lại` : '';
+
   if (elBar) {
-    elBar.style.width = `${pct}%`;
+    elBar.style.width = `${Math.min(pct, 100)}%`;
     if (totalExpense > limit) {
       elBar.style.backgroundColor = 'var(--expense)';
     } else if (pct >= 80) {
@@ -375,20 +429,23 @@ function renderBudgetWidget() {
       const over = totalExpense - limit;
       alertBox.style.backgroundColor = 'var(--expense-bg)';
       alertBox.style.color = 'var(--expense)';
-      alertText.textContent = `Cảnh báo: Bạn đã chi vượt hạn mức ${formatVND(over)} (${Math.round((totalExpense / limit) * 100)}%).`;
+      alertBox.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+      alertText.textContent = `Báo động: Bạn đã chi vượt hạn mức ${formatVND(over)} (${pct}% ngân sách).`;
     } else if (pct >= 80) {
       alertBox.style.backgroundColor = 'var(--budget-warn-bg)';
       alertBox.style.color = 'var(--budget-warn-text)';
-      alertText.textContent = `Bạn đã dùng ${pct}% ngân sách. Còn lại ${formatVND(remaining)} cho các ngày tiếp theo.`;
+      alertBox.style.borderColor = 'rgba(217, 119, 6, 0.3)';
+      alertText.textContent = `Cảnh báo: Bạn đã dùng ${pct}% ngân sách. Còn lại ${formatVND(remaining)}${daysText}.`;
     } else {
       alertBox.style.backgroundColor = 'var(--income-bg)';
       alertBox.style.color = 'var(--income)';
-      alertText.textContent = `Chi tiêu trong tầm kiểm soát: Đã dùng ${pct}% ngân sách. Còn lại ${formatVND(remaining)}.`;
+      alertBox.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+      alertText.textContent = `Chi tiêu an toàn: Đã dùng ${pct}% ngân sách. Còn lại ${formatVND(remaining)}${daysText}.`;
     }
   }
 }
 
-// Render dropdown danh mục lọc
+// Render dropdown danh mục lọc (F7)
 function renderCategoryFilterDropdown() {
   const select = document.getElementById('filter-category');
   if (!select) return;
@@ -405,7 +462,7 @@ function renderCategoryFilterDropdown() {
   select.innerHTML = html;
 }
 
-// Render bảng giao dịch
+// Render bảng danh sách giao dịch (F3)
 function renderTransactionsTable() {
   const tbody = document.getElementById('transactions-table-body');
   const countLabel = document.getElementById('tx-total-count');
@@ -414,7 +471,8 @@ function renderTransactionsTable() {
   const list = getFilteredTransactions();
 
   if (countLabel) {
-    countLabel.textContent = `Hiển thị ${list.length} giao dịch`;
+    const filterInfo = state.filterCategory !== 'all' ? ` [${state.filterCategory}]` : '';
+    countLabel.textContent = `Hiển thị ${list.length} giao dịch${filterInfo}`;
   }
 
   if (list.length === 0) {
@@ -426,7 +484,7 @@ function renderTransactionsTable() {
               <rect x="2" y="4" width="20" height="16" rx="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
             </svg>
-            <p>Không có giao dịch nào phù hợp trong tháng ${state.selectedMonth}/${state.selectedYear}.</p>
+            <p>Không tìm thấy giao dịch nào trong tháng ${state.selectedMonth}/${state.selectedYear}.</p>
           </div>
         </td>
       </tr>
@@ -442,7 +500,7 @@ function renderTransactionsTable() {
     const amountFormatted = `${sign} ${formatVND(t.amount)}`;
 
     return `
-      <tr data-id="${t.id}">
+      <tr data-id="${t.id}" title="Bấm để sửa giao dịch này">
         <td class="td-date">${formatDateDisplay(t.date)}</td>
         <td>
           <span class="cat-badge-wrap">
@@ -473,7 +531,7 @@ function renderTransactionsTable() {
     `;
   }).join('');
 
-  // Bắt sự kiện bấm nút Sửa / Xóa trên từng hàng
+  // Bắt sự kiện Sửa / Xóa
   tbody.querySelectorAll('.btn-action-edit').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -488,7 +546,6 @@ function renderTransactionsTable() {
     });
   });
 
-  // Bấm vào hàng cũng có thể mở sửa giao dịch
   tbody.querySelectorAll('tr').forEach(row => {
     row.addEventListener('click', () => {
       const id = row.dataset.id;
@@ -498,7 +555,7 @@ function renderTransactionsTable() {
   });
 }
 
-// Render phân bổ chi theo danh mục
+// Render Biểu đồ thống kê chi tiêu theo danh mục (F9)
 function renderCategoryStats() {
   const catList = document.getElementById('category-stats-list');
   const catTotal = document.getElementById('cat-stats-total');
@@ -517,13 +574,13 @@ function renderCategoryStats() {
     return;
   }
 
-  // Gom nhóm tổng chi theo từng danh mục
+  // Gom nhóm tổng chi theo danh mục
   const catMap = {};
   expenseTx.forEach(t => {
     catMap[t.category] = (catMap[t.category] || 0) + (Number(t.amount) || 0);
   });
 
-  // Chuyển sang mảng và sắp xếp chi nhiều nhất lên đầu
+  // Chuyển sang mảng và tính %
   const sorted = Object.entries(catMap)
     .map(([name, amount]) => ({
       name,
@@ -536,8 +593,9 @@ function renderCategoryStats() {
 
   catList.innerHTML = sorted.map((c, idx) => {
     const color = colors[idx % colors.length];
+    const isSelected = state.filterCategory === c.name ? 'active-filter' : '';
     return `
-      <div class="category-item">
+      <div class="category-item ${isSelected}" data-cat="${c.name}" title="Bấm để lọc theo danh mục ${c.name}">
         <div class="category-item-header">
           <span class="category-item-name">${c.name}</span>
           <span class="category-item-stats">${formatVND(c.amount)} · <strong>${c.pctNum}%</strong></span>
@@ -548,16 +606,35 @@ function renderCategoryStats() {
       </div>
     `;
   }).join('');
+
+  // Tương tác: Bấm vào 1 danh mục để lọc nhanh bảng giao dịch
+  catList.querySelectorAll('.category-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const cat = item.dataset.cat;
+      if (state.filterCategory === cat) {
+        state.filterCategory = 'all'; // Toggle bỏ lọc
+        showToast(`Đã hủy lọc danh mục`, 'info');
+      } else {
+        state.filterCategory = cat;
+        showToast(`Đang lọc theo: ${cat}`, 'info');
+      }
+      renderCategoryFilterDropdown();
+      renderTransactionsTable();
+      renderCategoryStats();
+
+      // Cuộn nhẹ tới bảng
+      const txSection = document.querySelector('.transactions-section');
+      if (txSection) txSection.scrollIntoView({ behavior: 'smooth' });
+    });
+  });
 }
 
-// Render lưới radio danh mục trong form Thêm/Sửa
 function renderFormCategoryGrid() {
   const grid = document.getElementById('tx-category-grid');
   if (!grid) return;
 
   const categories = CATEGORY_CONFIG[state.formType] || CATEGORY_CONFIG.expense;
 
-  // Nếu danh mục đang chọn không thuộc loại mới, mặc định chọn cái đầu tiên
   const isCurrentValid = categories.some(c => c.name === state.selectedCategoryName);
   if (!isCurrentValid && categories.length > 0) {
     state.selectedCategoryName = categories[0].name;
@@ -578,7 +655,6 @@ function renderFormCategoryGrid() {
       grid.querySelectorAll('.cat-radio-card').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       state.selectedCategoryName = btn.dataset.cat;
-      // Ẩn lỗi nếu đã chọn
       const err = document.getElementById('tx-category-error');
       if (err) err.hidden = true;
     });
@@ -586,7 +662,7 @@ function renderFormCategoryGrid() {
 }
 
 // ==========================================================================
-// 7. Xử lý Form Thêm / Sửa Giao Dịch (CRUD)
+// 7. Xử lý Form Thêm / Sửa Giao Dịch (F2, F4)
 // ==========================================================================
 function openAddModal() {
   state.editingId = null;
@@ -599,10 +675,8 @@ function openAddModal() {
   if (editIdInput) editIdInput.value = '';
   if (form) form.reset();
 
-  // Mặc định là Khoản chi
   setFormType('expense');
 
-  // Mặc định ngày hôm nay hoặc ngày trong tháng đang chọn
   const today = new Date();
   const isCurrentMonthView = today.getFullYear() === state.selectedYear && (today.getMonth() + 1) === state.selectedMonth;
   const defaultDateStr = isCurrentMonthView
@@ -616,6 +690,10 @@ function openAddModal() {
   updateNoteCharCount();
 
   if (modal) modal.removeAttribute('hidden');
+  setTimeout(() => {
+    const amountInput = document.getElementById('tx-amount');
+    if (amountInput) amountInput.focus();
+  }, 100);
 }
 
 function openEditModal(id) {
@@ -681,7 +759,6 @@ function updateNoteCharCount() {
   }
 }
 
-// Xử lý Submit Form Thêm/Sửa
 function handleSaveTransaction(e) {
   e.preventDefault();
 
@@ -695,7 +772,6 @@ function handleSaveTransaction(e) {
 
   let hasError = false;
 
-  // 1. Kiểm tra số tiền
   const rawAmount = parseCurrencyInput(amountInput ? amountInput.value : '');
   if (!rawAmount || rawAmount <= 0) {
     if (amountWrap) amountWrap.classList.add('has-error');
@@ -706,7 +782,6 @@ function handleSaveTransaction(e) {
     if (amountErr) amountErr.hidden = true;
   }
 
-  // 2. Kiểm tra danh mục
   if (!state.selectedCategoryName) {
     if (catErr) catErr.hidden = false;
     hasError = true;
@@ -714,7 +789,6 @@ function handleSaveTransaction(e) {
     if (catErr) catErr.hidden = true;
   }
 
-  // 3. Kiểm tra ngày
   const dateVal = dateInput ? dateInput.value.trim() : '';
   if (!dateVal) {
     hasError = true;
@@ -731,8 +805,9 @@ function handleSaveTransaction(e) {
     note: noteInput ? noteInput.value.trim() : ''
   };
 
-  if (state.editingId) {
-    // Sửa giao dịch đã có
+  const isEditing = Boolean(state.editingId);
+
+  if (isEditing) {
     const index = state.transactions.findIndex(t => t.id === state.editingId);
     if (index !== -1) {
       state.transactions[index] = {
@@ -741,7 +816,6 @@ function handleSaveTransaction(e) {
       };
     }
   } else {
-    // Thêm giao dịch mới
     const newTx = {
       id: 'tx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       ...payload,
@@ -753,10 +827,12 @@ function handleSaveTransaction(e) {
   saveTransactionsToStorage();
   closeModal('modal-tx');
   renderAll();
+
+  showToast(isEditing ? 'Cập nhật giao dịch thành công!' : 'Đã thêm giao dịch mới!');
 }
 
 // ==========================================================================
-// 8. Xử lý Modal Xóa Giao Dịch
+// 8. Xử lý Xóa Giao Dịch (F5)
 // ==========================================================================
 function openDeleteModal(id) {
   const tx = state.transactions.find(t => t.id === id);
@@ -788,10 +864,12 @@ function handleConfirmDelete() {
   saveTransactionsToStorage();
   closeModal('modal-delete');
   renderAll();
+
+  showToast('Đã xóa giao dịch thành công!', 'warning');
 }
 
 // ==========================================================================
-// 9. Xử lý Hạn Mức Ngân Sách
+// 9. Xử lý Hạn Mức Ngân Sách Tháng (F8)
 // ==========================================================================
 function openBudgetModal() {
   const modal = document.getElementById('modal-budget');
@@ -807,6 +885,9 @@ function openBudgetModal() {
   if (err) err.hidden = true;
 
   if (modal) modal.removeAttribute('hidden');
+  setTimeout(() => {
+    if (input) input.focus();
+  }, 100);
 }
 
 function handleSaveBudget(e) {
@@ -826,10 +907,56 @@ function handleSaveBudget(e) {
   saveBudgetsToStorage();
   closeModal('modal-budget');
   renderBudgetWidget();
+
+  showToast(`Đã lưu hạn mức ngân sách: ${formatVND(rawVal)}`);
 }
 
 // ==========================================================================
-// 10. Chuyển đổi Tháng & Bộ Lọc
+// 10. Xuất File CSV / Excel Chuẩn UTF-8 BOM (F12)
+// ==========================================================================
+function exportTransactionsToCSV() {
+  const list = getFilteredTransactions();
+
+  if (list.length === 0) {
+    showToast('Không có giao dịch nào trong tháng này để xuất file.', 'warning');
+    return;
+  }
+
+  // Tiêu đề cột
+  const headers = ['STT', 'Ngày', 'Loại', 'Danh mục', 'Số tiền (VND)', 'Hình thức', 'Ghi chú'];
+
+  const rows = list.map((t, idx) => {
+    const stt = idx + 1;
+    const date = t.date;
+    const type = t.type === 'income' ? 'Thu' : 'Chi';
+    const category = `"${(t.category || '').replace(/"/g, '""')}"`;
+    const amount = Number(t.amount) || 0;
+    const payment = `"${(t.paymentMethod || '').replace(/"/g, '""')}"`;
+    const note = `"${(t.note || '').replace(/"/g, '""')}"`;
+
+    return [stt, date, type, category, amount, payment, note].join(',');
+  });
+
+  // UTF-8 BOM (\uFEFF) giúp Microsoft Excel hiển thị tiếng Việt có dấu chuẩn 100%
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const downloadLink = document.createElement('a');
+
+  const fileName = `MoneyNote_GiaoDich_${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}.csv`;
+  downloadLink.href = url;
+  downloadLink.setAttribute('download', fileName);
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+  URL.revokeObjectURL(url);
+
+  showToast(`Đã xuất ${list.length} giao dịch ra file ${fileName}!`);
+}
+
+// ==========================================================================
+// 11. Chuyển đổi Tháng & Điều Hướng
 // ==========================================================================
 function changeMonth(delta) {
   state.selectedMonth += delta;
@@ -840,6 +967,9 @@ function changeMonth(delta) {
     state.selectedMonth = 12;
     state.selectedYear -= 1;
   }
+
+  // Reset category filter khi chuyển tháng
+  state.filterCategory = 'all';
   renderAll();
 }
 
@@ -849,7 +979,7 @@ function closeModal(modalId) {
 }
 
 // ==========================================================================
-// 11. Theme & Dark Mode Toggle
+// 12. Theme & Dark Mode (F11)
 // ==========================================================================
 function initTheme() {
   const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
@@ -864,6 +994,7 @@ function initTheme() {
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', newTheme);
     localStorage.setItem(STORAGE_KEYS.THEME, newTheme);
+    showToast(`Đã chuyển sang ${newTheme === 'dark' ? 'Chế độ tối' : 'Chế độ sáng'}`);
   }
 
   if (toggleBtn) toggleBtn.addEventListener('click', toggleTheme);
@@ -879,7 +1010,7 @@ function initTheme() {
 }
 
 // ==========================================================================
-// 12. Gán các sự kiện toàn cục (Event Listeners)
+// 13. Gán sự kiện toàn cục (Event Listeners)
 // ==========================================================================
 function setupEventListeners() {
   // 1. Chuyển tháng
@@ -888,7 +1019,7 @@ function setupEventListeners() {
   if (btnPrev) btnPrev.addEventListener('click', () => changeMonth(-1));
   if (btnNext) btnNext.addEventListener('click', () => changeMonth(1));
 
-  // 2. Mở modal thêm giao dịch
+  // 2. Mở modal thêm
   const btnOpenAdd = document.getElementById('btn-open-add-modal');
   const btnFabAdd = document.getElementById('btn-fab-add');
   if (btnOpenAdd) btnOpenAdd.addEventListener('click', openAddModal);
@@ -929,7 +1060,7 @@ function setupEventListeners() {
   const noteInput = document.getElementById('tx-note');
   if (noteInput) noteInput.addEventListener('input', updateNoteCharCount);
 
-  // 8. Modal Xóa giao dịch
+  // 8. Modal Xóa
   const btnCancelDel = document.getElementById('btn-cancel-delete');
   const btnConfirmDel = document.getElementById('btn-confirm-delete');
   if (btnCancelDel) btnCancelDel.addEventListener('click', () => closeModal('modal-delete'));
@@ -953,7 +1084,7 @@ function setupEventListeners() {
     });
   }
 
-  // 10. Đóng modal khi bấm ra ngoài backdrop hoặc nhấn Esc
+  // 10. Đóng modal bằng phím Esc hoặc click ngoài backdrop
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeModal('modal-tx');
@@ -988,10 +1119,11 @@ function setupEventListeners() {
     filterCatSelect.addEventListener('change', (e) => {
       state.filterCategory = e.target.value;
       renderTransactionsTable();
+      renderCategoryStats();
     });
   }
 
-  // 13. Tìm kiếm theo ghi chú
+  // 13. Tìm kiếm theo ghi chú realtime (không phân biệt dấu)
   const searchInput = document.getElementById('search-input');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -999,10 +1131,39 @@ function setupEventListeners() {
       renderTransactionsTable();
     });
   }
+
+  // 14. Xuất file CSV (F12)
+  const btnExportCsv = document.getElementById('btn-export-csv');
+  if (btnExportCsv) {
+    btnExportCsv.addEventListener('click', exportTransactionsToCSV);
+  }
+
+  // 15. Điều hướng mượt (Sidebar & Bottom Nav)
+  const navLinks = document.querySelectorAll('.nav-item, .bottom-nav-item');
+  navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      const href = link.getAttribute('href');
+      if (href && href.startsWith('#')) {
+        e.preventDefault();
+        navLinks.forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+
+        if (href === '#transactions') {
+          const target = document.querySelector('.transactions-section');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        } else if (href === '#statistics') {
+          const target = document.querySelector('.category-stats-section');
+          if (target) target.scrollIntoView({ behavior: 'smooth' });
+        } else if (href === '#overview') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    });
+  });
 }
 
 // ==========================================================================
-// 13. Khởi chạy khi tài liệu DOM sẵn sàng
+// 14. Khởi chạy ứng dụng
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
