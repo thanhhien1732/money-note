@@ -468,6 +468,11 @@ a:hover {
   color: var(--text-primary);
 }
 
+.btn-action-edit:hover {
+  background-color: var(--primary-light);
+  color: var(--primary);
+}
+
 .btn-action-delete:hover {
   background-color: var(--expense-bg);
   color: var(--expense);
