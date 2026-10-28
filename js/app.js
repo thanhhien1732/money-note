@@ -912,8 +912,10 @@ function handleSaveBudget(e) {
 }
 
 // ==========================================================================
-// 10. Xuất File CSV / Excel Chuẩn UTF-8 BOM (F12)
+// 10. Xuất File Báo Cáo Kẻ Bảng Đẹp Cho Excel (F12)
 // ==========================================================================
+
+// Xuất danh sách giao dịch ra file Excel có kẻ bảng, màu sắc, tiêu đề và bảng tóm tắt
 function exportTransactionsToCSV() {
   const list = getFilteredTransactions();
 
@@ -922,37 +924,154 @@ function exportTransactionsToCSV() {
     return;
   }
 
-  // Tiêu đề cột
-  const headers = ['STT', 'Ngày', 'Loại', 'Danh mục', 'Số tiền (VND)', 'Hình thức', 'Ghi chú'];
+  const { totalIncome, totalExpense, balance } = calculateMonthTotals();
+  const monthKey = getCurrentMonthKey();
+  const budgetLimit = state.budgets[monthKey] || 0;
+  const now = new Date();
+  const exportTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ngày ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
 
-  const rows = list.map((t, idx) => {
-    const stt = idx + 1;
-    const date = t.date;
-    const type = t.type === 'income' ? 'Thu' : 'Chi';
-    const category = `"${(t.category || '').replace(/"/g, '""')}"`;
-    const amount = Number(t.amount) || 0;
-    const payment = `"${(t.paymentMethod || '').replace(/"/g, '""')}"`;
-    const note = `"${(t.note || '').replace(/"/g, '""')}"`;
+  const rowsHtml = list.map((t, idx) => {
+    const isIncome = t.type === 'income';
+    const typeLabel = isIncome ? 'Thu' : 'Chi';
+    const typeColor = isIncome ? '#0E7A55' : '#B42318';
+    const sign = isIncome ? '+' : '−';
+    const amountVal = Number(t.amount) || 0;
+    const noteEscaped = (t.note || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const catEscaped = (t.category || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const payEscaped = (t.paymentMethod || 'Tiền mặt').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const bgRow = idx % 2 === 1 ? 'background-color: #F8FAFC;' : 'background-color: #FFFFFF;';
 
-    return [stt, date, type, category, amount, payment, note].join(',');
-  });
+    return `
+      <tr style="${bgRow}">
+        <td style="text-align: center; mso-number-format: '\\@'; padding: 7px 10px; border: 1px solid #94A3B8;">${idx + 1}</td>
+        <td style="text-align: center; mso-number-format: '\\@'; padding: 7px 10px; border: 1px solid #94A3B8;">${formatDateDisplay(t.date)}</td>
+        <td style="text-align: center; font-weight: bold; color: ${typeColor}; mso-number-format: '\\@'; padding: 7px 10px; border: 1px solid #94A3B8;">${typeLabel}</td>
+        <td style="text-align: left; font-weight: 500; mso-number-format: '\\@'; padding: 7px 10px; border: 1px solid #94A3B8;">${catEscaped}</td>
+        <td style="text-align: right; font-weight: bold; color: ${typeColor}; mso-number-format: '#,##0\\ \\₫'; padding: 7px 10px; border: 1px solid #94A3B8;">${sign}${amountVal.toLocaleString('vi-VN')} ₫</td>
+        <td style="text-align: center; mso-number-format: '\\@'; padding: 7px 10px; border: 1px solid #94A3B8;">${payEscaped}</td>
+        <td style="text-align: left; mso-number-format: '\\@'; padding: 7px 10px; border: 1px solid #94A3B8;">${noteEscaped}</td>
+      </tr>
+    `;
+  }).join('');
 
-  // UTF-8 BOM (\uFEFF) giúp Microsoft Excel hiển thị tiếng Việt có dấu chuẩn 100%
-  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  const htmlContent = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="utf-8">
+      <!--[if gte mso 9]>
+      <xml>
+        <x:ExcelWorkbook>
+          <x:ExcelWorksheets>
+            <x:ExcelWorksheet>
+              <x:Name>Báo cáo thu chi</x:Name>
+              <x:WorksheetOptions>
+                <x:DisplayGridlines/>
+                <x:Print><x:ValidPrinterInfo/></x:Print>
+              </x:WorksheetOptions>
+            </x:ExcelWorksheet>
+          </x:ExcelWorksheets>
+        </x:ExcelWorkbook>
+      </xml>
+      <![endif]-->
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; }
+        table { border-collapse: collapse; width: 100%; }
+        .report-header { font-size: 18pt; font-weight: bold; color: #1D4ED8; text-align: center; height: 44px; vertical-align: middle; }
+        .report-sub { font-size: 11pt; color: #4B5563; text-align: center; font-style: italic; }
+        .box-title { font-size: 11pt; font-weight: bold; background-color: #EEF2FF; color: #1E3A8A; border: 1px solid #93C5FD; padding: 8px; text-align: center; }
+        .summary-label { font-weight: bold; background-color: #F8FAFC; border: 1px solid #CBD5E1; padding: 6px 12px; }
+        .summary-value { font-weight: bold; border: 1px solid #CBD5E1; padding: 6px 12px; text-align: right; }
+        th {
+          background-color: #1D4ED8;
+          color: #FFFFFF;
+          font-weight: bold;
+          font-size: 11pt;
+          border: 1px solid #000000;
+          text-align: center;
+          vertical-align: middle;
+          height: 34px;
+        }
+        td {
+          border: 1px solid #94A3B8;
+          font-size: 10.5pt;
+          vertical-align: middle;
+          padding: 6px 10px;
+        }
+        .total-row td {
+          background-color: #EEF2FF;
+          font-weight: bold;
+          font-size: 11pt;
+          border-top: 2px solid #1D4ED8;
+          border-bottom: 2px solid #1D4ED8;
+          height: 32px;
+        }
+      </style>
+    </head>
+    <body>
+      <table>
+        <tr>
+          <td colspan="7" class="report-header">BÁO CÁO THU CHI CÁ NHÂN – MONEYNOTE</td>
+        </tr>
+        <tr>
+          <td colspan="7" class="report-sub">Tháng ${state.selectedMonth}/${state.selectedYear} | Xuất lúc: ${exportTime}</td>
+        </tr>
+        <tr><td colspan="7" style="border: none; height: 12px;"></td></tr>
+        
+        <!-- Bảng tóm tắt chỉ số -->
+        <tr>
+          <td colspan="7" class="box-title">TỔNG QUAN TÀI CHÍNH THÁNG ${state.selectedMonth}/${state.selectedYear}</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="summary-label">Tổng thu nhập:</td>
+          <td colspan="2" class="summary-value" style="color: #0E7A55;">+ ${formatVND(totalIncome)}</td>
+          <td class="summary-label">Số dư hiện tại:</td>
+          <td colspan="2" class="summary-value" style="color: #1D4ED8; font-size: 12pt;">${formatVND(balance)}</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="summary-label">Tổng chi tiêu:</td>
+          <td colspan="2" class="summary-value" style="color: #B42318;">− ${formatVND(totalExpense)}</td>
+          <td class="summary-label">Hạn mức ngân sách:</td>
+          <td colspan="2" class="summary-value">${budgetLimit > 0 ? formatVND(budgetLimit) : 'Chưa đặt'}</td>
+        </tr>
+        <tr><td colspan="7" style="border: none; height: 16px;"></td></tr>
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        <!-- Bảng danh sách chi tiết có kẻ khung viền đẹp -->
+        <thead>
+          <tr>
+            <th style="width: 50px;">STT</th>
+            <th style="width: 110px;">Ngày</th>
+            <th style="width: 75px;">Loại</th>
+            <th style="width: 140px;">Danh mục</th>
+            <th style="width: 150px;">Số tiền</th>
+            <th style="width: 130px;">Hình thức</th>
+            <th style="width: 280px;">Ghi chú</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+          <tr class="total-row">
+            <td colspan="4" style="text-align: center;">TỔNG CỘNG THÁNG ${state.selectedMonth}/${state.selectedYear} (SỐ DƯ)</td>
+            <td style="text-align: right; color: ${balance >= 0 ? '#0E7A55' : '#B42318'};">${formatVND(balance)}</td>
+            <td colspan="2" style="text-align: center; font-style: italic; color: #4B5563;">${list.length} giao dịch</td>
+          </tr>
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  const blob = new Blob(['\uFEFF' + htmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
-  const downloadLink = document.createElement('a');
-
-  const fileName = `MoneyNote_GiaoDich_${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}.csv`;
-  downloadLink.href = url;
-  downloadLink.setAttribute('download', fileName);
-  document.body.appendChild(downloadLink);
-  downloadLink.click();
-  document.body.removeChild(downloadLink);
+  const a = document.createElement('a');
+  const fileName = `MoneyNote_GiaoDich_${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}.xls`;
+  a.href = url;
+  a.setAttribute('download', fileName);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  showToast(`Đã xuất ${list.length} giao dịch ra file ${fileName}!`);
+  showToast(`Đã xuất ${list.length} giao dịch ra file Excel có kẻ bảng đẹp!`);
 }
 
 // ==========================================================================
@@ -1132,7 +1251,7 @@ function setupEventListeners() {
     });
   }
 
-  // 14. Xuất file CSV (F12)
+  // 14. Xuất file có kẻ bảng và định dạng đẹp cho Excel (F12)
   const btnExportCsv = document.getElementById('btn-export-csv');
   if (btnExportCsv) {
     btnExportCsv.addEventListener('click', exportTransactionsToCSV);
