@@ -1,14 +1,3 @@
-/**
- * MoneyNote – Ứng dụng ghi chép thu chi cá nhân
- * Part 3: Hoàn thiện toàn diện các tính năng nâng cao
- * - CRUD & LocalStorage
- * - Bộ lọc đa chiều & Tìm kiếm ghi chú không dấu
- * - Quản lý Hạn mức Ngân sách & Hệ thống Cảnh báo tự động
- * - Thống kê Phân bổ Chi tiêu & Biểu đồ tỷ lệ %
- * - Xuất file Excel / CSV chuẩn UTF-8 BOM tiếng Việt
- * - Chế độ tối (Dark mode) & Thông báo Toast tương tác
- */
-
 // ==========================================================================
 // 1. Cấu hình Danh mục & Bảng màu
 // ==========================================================================
@@ -33,7 +22,12 @@ const CATEGORY_CONFIG = {
 const ALL_CATEGORIES = [...CATEGORY_CONFIG.expense, ...CATEGORY_CONFIG.income];
 
 function getCategoryMeta(name) {
-  return ALL_CATEGORIES.find(c => c.name === name) || { bg: '#F1F5F9', fg: '#334155', ini: 'K' };
+  const found = ALL_CATEGORIES.find(c => c.name === name);
+  if (found) return found;
+  const initial = (name && typeof name === 'string' && name.trim().length > 0)
+    ? name.trim().charAt(0).toUpperCase()
+    : 'K';
+  return { bg: '#F1F5F9', fg: '#334155', ini: initial };
 }
 
 // ==========================================================================
@@ -674,9 +668,10 @@ function renderFormCategoryGrid() {
 
   const categories = CATEGORY_CONFIG[state.formType] || CATEGORY_CONFIG.expense;
 
+  // Không tự động chọn sẵn danh mục nếu chưa có lựa chọn (Yêu cầu 2)
   const isCurrentValid = categories.some(c => c.name === state.selectedCategoryName);
-  if (!isCurrentValid && categories.length > 0) {
-    state.selectedCategoryName = categories[0].name;
+  if (!isCurrentValid) {
+    state.selectedCategoryName = '';
   }
 
   grid.innerHTML = categories.map(c => {
@@ -694,10 +689,38 @@ function renderFormCategoryGrid() {
       grid.querySelectorAll('.cat-radio-card').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       state.selectedCategoryName = btn.dataset.cat;
-      const err = document.getElementById('tx-category-error');
-      if (err) err.hidden = true;
+
+      // Ẩn thông báo lỗi danh mục nếu đang hiển thị
+      const catErr = document.getElementById('tx-category-error');
+      if (catErr) {
+        catErr.hidden = true;
+        catErr.setAttribute('hidden', '');
+      }
+
+      // Xử lý hiển thị ô nhập danh mục khác (Yêu cầu 3)
+      handleCustomCategoryVisibility();
     });
   });
+
+  handleCustomCategoryVisibility();
+}
+
+// Xử lý dải ô nhập tên danh mục tùy chỉnh khi chọn 'Khác' (Yêu cầu 3)
+function handleCustomCategoryVisibility() {
+  const customCatWrap = document.getElementById('tx-custom-category-wrap');
+  const customCatInput = document.getElementById('tx-custom-category');
+  if (!customCatWrap) return;
+
+  if (state.selectedCategoryName === 'Khác') {
+    customCatWrap.hidden = false;
+    customCatWrap.removeAttribute('hidden');
+    if (customCatInput) {
+      setTimeout(() => customCatInput.focus(), 60);
+    }
+  } else {
+    customCatWrap.hidden = true;
+    customCatWrap.setAttribute('hidden', '');
+  }
 }
 
 // ==========================================================================
@@ -705,16 +728,24 @@ function renderFormCategoryGrid() {
 // ==========================================================================
 function openAddModal() {
   state.editingId = null;
+  state.selectedCategoryName = ''; // Không chọn sẵn danh mục mặc định (Yêu cầu 2)
   const modal = document.getElementById('modal-tx');
   const title = document.getElementById('modal-tx-title');
   const form = document.getElementById('tx-form');
   const editIdInput = document.getElementById('tx-edit-id');
+  const customCatInput = document.getElementById('tx-custom-category');
+  const customCatWrap = document.getElementById('tx-custom-category-wrap');
 
   if (title) title.textContent = 'Thêm giao dịch';
   if (editIdInput) editIdInput.value = '';
   if (form) form.reset();
+  if (customCatInput) customCatInput.value = '';
+  if (customCatWrap) {
+    customCatWrap.hidden = true;
+    customCatWrap.setAttribute('hidden', '');
+  }
 
-  setFormType('expense');
+  setFormType('expense', false);
 
   const today = new Date();
   const isCurrentMonthView = today.getFullYear() === state.selectedYear && (today.getMonth() + 1) === state.selectedMonth;
@@ -725,7 +756,7 @@ function openAddModal() {
   const dateInput = document.getElementById('tx-date');
   if (dateInput) dateInput.value = defaultDateStr;
 
-  clearFormValidationErrors();
+  clearFormValidationErrors(); // Ẩn triệt để thông báo lỗi khi mới mở (Yêu cầu 1)
   updateNoteCharCount();
 
   if (modal) modal.removeAttribute('hidden');
@@ -747,6 +778,8 @@ function openEditModal(id) {
   const dateInput = document.getElementById('tx-date');
   const paymentSelect = document.getElementById('tx-payment');
   const noteTextarea = document.getElementById('tx-note');
+  const customCatInput = document.getElementById('tx-custom-category');
+  const customCatWrap = document.getElementById('tx-custom-category-wrap');
 
   if (title) title.textContent = 'Sửa giao dịch';
   if (editIdInput) editIdInput.value = tx.id;
@@ -755,8 +788,27 @@ function openEditModal(id) {
   if (paymentSelect) paymentSelect.value = tx.paymentMethod || 'Tiền mặt';
   if (noteTextarea) noteTextarea.value = tx.note || '';
 
-  state.selectedCategoryName = tx.category;
-  setFormType(tx.type);
+  // Kiểm tra xem category có nằm trong danh mục tiêu chuẩn hay danh mục tùy chỉnh
+  const standardCats = (CATEGORY_CONFIG[tx.type] || []).map(c => c.name);
+  if (standardCats.includes(tx.category) && tx.category !== 'Khác') {
+    state.selectedCategoryName = tx.category;
+    if (customCatInput) customCatInput.value = '';
+    if (customCatWrap) {
+      customCatWrap.hidden = true;
+      customCatWrap.setAttribute('hidden', '');
+    }
+  } else {
+    state.selectedCategoryName = 'Khác';
+    if (customCatInput) {
+      customCatInput.value = tx.category === 'Khác' ? '' : tx.category;
+    }
+    if (customCatWrap) {
+      customCatWrap.hidden = false;
+      customCatWrap.removeAttribute('hidden');
+    }
+  }
+
+  setFormType(tx.type, true);
 
   clearFormValidationErrors();
   updateNoteCharCount();
@@ -764,7 +816,7 @@ function openEditModal(id) {
   if (modal) modal.removeAttribute('hidden');
 }
 
-function setFormType(type) {
+function setFormType(type, keepCategory = false) {
   state.formType = type;
   const btnIncome = document.getElementById('btn-type-income');
   const btnExpense = document.getElementById('btn-type-expense');
@@ -777,7 +829,19 @@ function setFormType(type) {
     if (btnIncome) btnIncome.classList.remove('active');
   }
 
+  if (!keepCategory) {
+    state.selectedCategoryName = '';
+    const customCatInput = document.getElementById('tx-custom-category');
+    const customCatWrap = document.getElementById('tx-custom-category-wrap');
+    if (customCatInput) customCatInput.value = '';
+    if (customCatWrap) {
+      customCatWrap.hidden = true;
+      customCatWrap.setAttribute('hidden', '');
+    }
+  }
+
   renderFormCategoryGrid();
+  clearFormValidationErrors();
 }
 
 function clearFormValidationErrors() {
@@ -786,8 +850,14 @@ function clearFormValidationErrors() {
   const catErr = document.getElementById('tx-category-error');
 
   if (amountWrap) amountWrap.classList.remove('has-error');
-  if (amountErr) amountErr.hidden = true;
-  if (catErr) catErr.hidden = true;
+  if (amountErr) {
+    amountErr.hidden = true;
+    amountErr.setAttribute('hidden', '');
+  }
+  if (catErr) {
+    catErr.hidden = true;
+    catErr.setAttribute('hidden', '');
+  }
 }
 
 function updateNoteCharCount() {
@@ -808,26 +878,42 @@ function handleSaveTransaction(e) {
   const dateInput = document.getElementById('tx-date');
   const paymentSelect = document.getElementById('tx-payment');
   const noteInput = document.getElementById('tx-note');
+  const customCatInput = document.getElementById('tx-custom-category');
 
   let hasError = false;
 
+  // 1. Kiểm tra số tiền: phải lớn hơn 0 (Yêu cầu 1)
   const rawAmount = parseCurrencyInput(amountInput ? amountInput.value : '');
   if (!rawAmount || rawAmount <= 0) {
     if (amountWrap) amountWrap.classList.add('has-error');
-    if (amountErr) amountErr.hidden = false;
+    if (amountErr) {
+      amountErr.hidden = false;
+      amountErr.removeAttribute('hidden');
+    }
     hasError = true;
   } else {
     if (amountWrap) amountWrap.classList.remove('has-error');
-    if (amountErr) amountErr.hidden = true;
+    if (amountErr) {
+      amountErr.hidden = true;
+      amountErr.setAttribute('hidden', '');
+    }
   }
 
+  // 2. Kiểm tra danh mục: phải chọn danh mục (Yêu cầu 1)
   if (!state.selectedCategoryName) {
-    if (catErr) catErr.hidden = false;
+    if (catErr) {
+      catErr.hidden = false;
+      catErr.removeAttribute('hidden');
+    }
     hasError = true;
   } else {
-    if (catErr) catErr.hidden = true;
+    if (catErr) {
+      catErr.hidden = true;
+      catErr.setAttribute('hidden', '');
+    }
   }
 
+  // 3. Kiểm tra ngày
   const dateVal = dateInput ? dateInput.value.trim() : '';
   if (!dateVal) {
     hasError = true;
@@ -835,10 +921,17 @@ function handleSaveTransaction(e) {
 
   if (hasError) return;
 
+  // Xác định tên danh mục (nếu chọn 'Khác' và có nhập tên tùy chỉnh - Yêu cầu 3)
+  let finalCategory = state.selectedCategoryName;
+  if (state.selectedCategoryName === 'Khác') {
+    const customVal = customCatInput ? customCatInput.value.trim() : '';
+    finalCategory = customVal ? customVal : 'Khác';
+  }
+
   const payload = {
     type: state.formType,
     amount: rawAmount,
-    category: state.selectedCategoryName,
+    category: finalCategory,
     date: dateVal,
     paymentMethod: paymentSelect ? paymentSelect.value : 'Tiền mặt',
     note: noteInput ? noteInput.value.trim() : ''
@@ -1193,14 +1286,14 @@ function setupEventListeners() {
   // 4. Toggle Thu/Chi trong form
   const btnIncome = document.getElementById('btn-type-income');
   const btnExpense = document.getElementById('btn-type-expense');
-  if (btnIncome) btnIncome.addEventListener('click', () => setFormType('income'));
-  if (btnExpense) btnExpense.addEventListener('click', () => setFormType('expense'));
+  if (btnIncome) btnIncome.addEventListener('click', () => setFormType('income', false));
+  if (btnExpense) btnExpense.addEventListener('click', () => setFormType('expense', false));
 
   // 5. Submit Form Thêm/Sửa
   const formTx = document.getElementById('tx-form');
   if (formTx) formTx.addEventListener('submit', handleSaveTransaction);
 
-  // 6. Format số tiền khi gõ
+  // 6. Format số tiền khi gõ & tự xóa lỗi khi nhập > 0
   const amountInput = document.getElementById('tx-amount');
   if (amountInput) {
     amountInput.addEventListener('input', () => {
@@ -1210,7 +1303,10 @@ function setupEventListeners() {
       const amountErr = document.getElementById('tx-amount-error');
       if (num > 0) {
         if (amountWrap) amountWrap.classList.remove('has-error');
-        if (amountErr) amountErr.hidden = true;
+        if (amountErr) {
+          amountErr.hidden = true;
+          amountErr.setAttribute('hidden', '');
+        }
       }
     });
   }
