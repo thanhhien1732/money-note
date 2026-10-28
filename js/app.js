@@ -1,95 +1,465 @@
 /**
- * MoneyNote - Part 1: Giao diện & Tương tác cơ bản
- * Hỗ trợ chuyển đổi giao diện Sáng / Tối, hiển thị mẫu và kiểm tra các Modal
+ * MoneyNote – Ứng dụng ghi chép thu chi cá nhân
+ * Part 2: Xử lý dữ liệu cốt lõi & chức năng CRUD (LocalStorage)
  */
 
-// Chuyển đổi Dark Mode & Phím tắt F11
-function initTheme() {
-  const savedTheme = localStorage.getItem('moneynote_theme') || 'light';
-  document.documentElement.setAttribute('data-theme', savedTheme);
+// ==========================================================================
+// 1. Cấu hình danh mục chuẩn & Bảng màu
+// ==========================================================================
+const CATEGORY_CONFIG = {
+  expense: [
+    { name: 'Ăn uống', bg: '#FFF1E6', fg: '#9A3412', ini: 'Ă' },
+    { name: 'Đi lại', bg: '#E0F2FE', fg: '#075985', ini: 'Đ' },
+    { name: 'Mua sắm', bg: '#FCE7F3', fg: '#9D174D', ini: 'M' },
+    { name: 'Học tập', bg: '#EDE9FE', fg: '#5B21B6', ini: 'H' },
+    { name: 'Giải trí', bg: '#E0E7FF', fg: '#3730A3', ini: 'G' },
+    { name: 'Hóa đơn', bg: '#FEF3C7', fg: '#92400E', ini: 'H' },
+    { name: 'Khác', bg: '#F1F5F9', fg: '#334155', ini: 'K' }
+  ],
+  income: [
+    { name: 'Lương', bg: '#E7F6EF', fg: '#065F46', ini: 'L' },
+    { name: 'Học bổng', bg: '#E7F6EF', fg: '#065F46', ini: 'H' },
+    { name: 'Được cho', bg: '#FEF3C7', fg: '#92400E', ini: 'Đ' },
+    { name: 'Khác', bg: '#F1F5F9', fg: '#334155', ini: 'K' }
+  ]
+};
 
-  const toggleBtn = document.getElementById('theme-toggle');
-  const mobileSettingsBtn = document.getElementById('bottom-nav-settings');
+// Map tra cứu nhanh màu sắc theo tên danh mục
+const ALL_CATEGORIES = [...CATEGORY_CONFIG.expense, ...CATEGORY_CONFIG.income];
+function getCategoryMeta(name) {
+  return ALL_CATEGORIES.find(c => c.name === name) || { bg: '#F1F5F9', fg: '#334155', ini: 'K' };
+}
 
-  function toggleTheme(e) {
-    if (e) e.preventDefault();
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('moneynote_theme', newTheme);
+// ==========================================================================
+// 2. Trạng thái ứng dụng (Application State)
+// ==========================================================================
+const STORAGE_KEYS = {
+  TRANSACTIONS: 'moneynote_transactions',
+  BUDGETS: 'moneynote_budgets',
+  THEME: 'moneynote_theme'
+};
+
+const state = {
+  transactions: [],
+  selectedYear: 2026,
+  selectedMonth: 10, // 1-12
+  budgets: {}, // { '2026-10': 6000000 }
+  filterType: 'all', // 'all' | 'income' | 'expense'
+  filterCategory: 'all',
+  searchQuery: '',
+  formType: 'expense',
+  selectedCategoryName: '',
+  editingId: null,
+  deletingId: null
+};
+
+// ==========================================================================
+// 3. Khởi tạo & Dữ liệu mẫu (Sample Data)
+// ==========================================================================
+function getSampleTransactions(year, month) {
+  const m = String(month).padStart(2, '0');
+  return [
+    {
+      id: 'tx_sample_1',
+      type: 'expense',
+      amount: 45000,
+      category: 'Ăn uống',
+      date: `${year}-${m}-28`,
+      paymentMethod: 'Tiền mặt',
+      note: 'Cà phê với nhóm',
+      createdAt: new Date(`${year}-${m}-28T09:30:00`).getTime()
+    },
+    {
+      id: 'tx_sample_2',
+      type: 'expense',
+      amount: 80000,
+      category: 'Đi lại',
+      date: `${year}-${m}-27`,
+      paymentMethod: 'Tiền mặt',
+      note: 'Đổ xăng xe máy',
+      createdAt: new Date(`${year}-${m}-27T17:15:00`).getTime()
+    },
+    {
+      id: 'tx_sample_3',
+      type: 'expense',
+      amount: 150000,
+      category: 'Học tập',
+      date: `${year}-${m}-25`,
+      paymentMethod: 'Chuyển khoản',
+      note: 'Mua giáo trình JavaScript',
+      createdAt: new Date(`${year}-${m}-25T14:00:00`).getTime()
+    },
+    {
+      id: 'tx_sample_4',
+      type: 'income',
+      amount: 3500000,
+      category: 'Lương',
+      date: `${year}-${m}-24`,
+      paymentMethod: 'Chuyển khoản',
+      note: 'Lương part-time tháng 10',
+      createdAt: new Date(`${year}-${m}-24T10:00:00`).getTime()
+    },
+    {
+      id: 'tx_sample_5',
+      type: 'expense',
+      amount: 420000,
+      category: 'Hóa đơn',
+      date: `${year}-${m}-22`,
+      paymentMethod: 'Ví điện tử',
+      note: 'Tiền điện nước phòng trọ',
+      createdAt: new Date(`${year}-${m}-22T19:45:00`).getTime()
+    },
+    {
+      id: 'tx_sample_6',
+      type: 'expense',
+      amount: 350000,
+      category: 'Mua sắm',
+      date: `${year}-${m}-20`,
+      paymentMethod: 'Ví điện tử',
+      note: 'Mua áo khoác',
+      createdAt: new Date(`${year}-${m}-20T16:20:00`).getTime()
+    },
+    {
+      id: 'tx_sample_7',
+      type: 'expense',
+      amount: 110000,
+      category: 'Giải trí',
+      date: `${year}-${m}-18`,
+      paymentMethod: 'Ví điện tử',
+      note: 'Vé xem phim cuối tuần',
+      createdAt: new Date(`${year}-${m}-18T20:00:00`).getTime()
+    },
+    {
+      id: 'tx_sample_8',
+      type: 'income',
+      amount: 5000000,
+      category: 'Học bổng',
+      date: `${year}-${m}-15`,
+      paymentMethod: 'Chuyển khoản',
+      note: 'Học bổng kỳ 1',
+      createdAt: new Date(`${year}-${m}-15T08:30:00`).getTime()
+    },
+    {
+      id: 'tx_sample_9',
+      type: 'expense',
+      amount: 480000,
+      category: 'Ăn uống',
+      date: `${year}-${m}-10`,
+      paymentMethod: 'Chuyển khoản',
+      note: 'Đi siêu thị mua đồ ăn',
+      createdAt: new Date(`${year}-${m}-10T11:15:00`).getTime()
+    },
+    {
+      id: 'tx_sample_10',
+      type: 'income',
+      amount: 2000000,
+      category: 'Được cho',
+      date: `${year}-${m}-05`,
+      paymentMethod: 'Chuyển khoản',
+      note: 'Bố mẹ gửi phụ cấp sinh hoạt',
+      createdAt: new Date(`${year}-${m}-05T15:00:00`).getTime()
+    }
+  ];
+}
+
+// Tải dữ liệu từ LocalStorage
+function loadDataFromStorage() {
+  const rawTx = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+  const rawBudgets = localStorage.getItem(STORAGE_KEYS.BUDGETS);
+
+  if (rawBudgets) {
+    try {
+      state.budgets = JSON.parse(rawBudgets);
+    } catch (e) {
+      state.budgets = {};
+    }
+  } else {
+    // Ngân sách mặc định tháng 10/2026: 6.000.000 ₫
+    state.budgets = { [`${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}`]: 6000000 };
+    saveBudgetsToStorage();
   }
 
-  if (toggleBtn) toggleBtn.addEventListener('click', toggleTheme);
-  if (mobileSettingsBtn) mobileSettingsBtn.addEventListener('click', toggleTheme);
-
-  // Phím tắt F11 hoặc Ctrl+Shift+D
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'F11') {
-      e.preventDefault();
-      toggleTheme();
+  if (rawTx) {
+    try {
+      state.transactions = JSON.parse(rawTx);
+    } catch (e) {
+      state.transactions = [];
     }
+  } else {
+    // Lần đầu mở: nạp sẵn 10 giao dịch mẫu
+    state.transactions = getSampleTransactions(state.selectedYear, state.selectedMonth);
+    saveTransactionsToStorage();
+  }
+}
+
+function saveTransactionsToStorage() {
+  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(state.transactions));
+}
+
+function saveBudgetsToStorage() {
+  localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(state.budgets));
+}
+
+// ==========================================================================
+// 4. Các hàm Tiện ích (Formatters & Helpers)
+// ==========================================================================
+function formatVND(amount) {
+  const num = Number(amount) || 0;
+  return num.toLocaleString('vi-VN') + ' ₫';
+}
+
+function parseCurrencyInput(value) {
+  if (!value) return 0;
+  // Loại bỏ tất cả ký tự không phải số
+  const clean = String(value).replace(/[^0-9]/g, '');
+  return clean ? parseInt(clean, 10) : 0;
+}
+
+function formatDateDisplay(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
+
+function getCurrentMonthKey() {
+  return `${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}`;
+}
+
+// ==========================================================================
+// 5. Tính toán & Lọc Dữ liệu (Selectors)
+// ==========================================================================
+function getTransactionsForCurrentMonth() {
+  const monthKey = getCurrentMonthKey();
+  return state.transactions.filter(t => t.date && t.date.startsWith(monthKey));
+}
+
+function getFilteredTransactions() {
+  let list = getTransactionsForCurrentMonth();
+
+  // Lọc theo loại (all / income / expense)
+  if (state.filterType !== 'all') {
+    list = list.filter(t => t.type === state.filterType);
+  }
+
+  // Lọc theo danh mục
+  if (state.filterCategory !== 'all') {
+    list = list.filter(t => t.category === state.filterCategory);
+  }
+
+  // Lọc theo từ khóa ghi chú
+  if (state.searchQuery.trim()) {
+    const q = state.searchQuery.trim().toLowerCase();
+    list = list.filter(t => t.note && t.note.toLowerCase().includes(q));
+  }
+
+  // Sắp xếp: Ngày mới nhất lên đầu, nếu cùng ngày thì theo thời gian tạo
+  return list.sort((a, b) => {
+    if (b.date !== a.date) {
+      return b.date.localeCompare(a.date);
+    }
+    return (b.createdAt || 0) - (a.createdAt || 0);
   });
 }
 
-// Mẫu hiển thị tĩnh để kiểm tra trực quan trong Part 1
-function renderPreviewData() {
-  // Cập nhật số liệu mẫu lên giao diện
-  const incomeEl = document.getElementById('total-income');
-  const expenseEl = document.getElementById('total-expense');
-  const balanceEl = document.getElementById('total-balance');
-  const incomeCountEl = document.getElementById('income-count');
-  const expenseCountEl = document.getElementById('expense-count');
-  
-  if (incomeEl) incomeEl.textContent = '8.500.000 ₫';
-  if (expenseEl) expenseEl.textContent = '5.230.000 ₫';
-  if (balanceEl) balanceEl.textContent = '3.270.000 ₫';
-  if (incomeCountEl) incomeCountEl.textContent = '2 khoản thu';
-  if (expenseCountEl) expenseCountEl.textContent = '14 khoản chi';
+function calculateMonthTotals() {
+  const monthTx = getTransactionsForCurrentMonth();
+  let totalIncome = 0;
+  let totalExpense = 0;
+  let incomeCount = 0;
+  let expenseCount = 0;
 
-  // Tiến độ ngân sách mẫu
-  const budgetSpent = document.getElementById('budget-spent-amount');
-  const budgetLimit = document.getElementById('budget-limit-amount');
-  const progressBar = document.getElementById('budget-progress-bar');
+  monthTx.forEach(t => {
+    const amt = Number(t.amount) || 0;
+    if (t.type === 'income') {
+      totalIncome += amt;
+      incomeCount++;
+    } else {
+      totalExpense += amt;
+      expenseCount++;
+    }
+  });
+
+  const balance = totalIncome - totalExpense;
+  return { totalIncome, totalExpense, balance, incomeCount, expenseCount };
+}
+
+// ==========================================================================
+// 6. Giao diện & Render (UI Rendering)
+// ==========================================================================
+function renderAll() {
+  renderMonthHeader();
+  renderOverviewStats();
+  renderBudgetWidget();
+  renderCategoryFilterDropdown();
+  renderTransactionsTable();
+  renderCategoryStats();
+}
+
+// Render tiêu đề tháng
+function renderMonthHeader() {
+  const monthDisplay = document.getElementById('current-month-display');
+  if (monthDisplay) {
+    monthDisplay.textContent = `Tháng ${state.selectedMonth}/${state.selectedYear}`;
+  }
+
+  const budgetMonthDisplay = document.getElementById('budget-modal-month');
+  if (budgetMonthDisplay) {
+    budgetMonthDisplay.textContent = `Tháng ${state.selectedMonth}/${state.selectedYear}`;
+  }
+}
+
+// Render thẻ thống kê (Tổng thu, chi, số dư)
+function renderOverviewStats() {
+  const { totalIncome, totalExpense, balance, incomeCount, expenseCount } = calculateMonthTotals();
+
+  const elIncome = document.getElementById('total-income');
+  const elExpense = document.getElementById('total-expense');
+  const elBalance = document.getElementById('total-balance');
+  const elIncomeCount = document.getElementById('income-count');
+  const elExpenseCount = document.getElementById('expense-count');
+
+  if (elIncome) elIncome.textContent = formatVND(totalIncome);
+  if (elExpense) elExpense.textContent = formatVND(totalExpense);
+  if (elBalance) elBalance.textContent = formatVND(balance);
+
+  if (elIncomeCount) elIncomeCount.textContent = `${incomeCount} khoản thu`;
+  if (elExpenseCount) elExpenseCount.textContent = `${expenseCount} khoản chi`;
+}
+
+// Render Widget Ngân sách tháng
+function renderBudgetWidget() {
+  const { totalExpense } = calculateMonthTotals();
+  const monthKey = getCurrentMonthKey();
+  const limit = state.budgets[monthKey] || 0;
+
+  const elSpent = document.getElementById('budget-spent-amount');
+  const elLimit = document.getElementById('budget-limit-amount');
+  const elBar = document.getElementById('budget-progress-bar');
+  const alertBox = document.getElementById('budget-alert-box');
   const alertText = document.getElementById('budget-alert-text');
 
-  if (budgetSpent) budgetSpent.textContent = '5.230.000 ₫';
-  if (budgetLimit) budgetLimit.textContent = '6.000.000 ₫';
-  if (progressBar) progressBar.style.width = '87%';
-  if (alertText) alertText.textContent = 'Bạn đã dùng 87% ngân sách. Còn lại 770.000 ₫ cho những ngày cuối tháng.';
+  if (elSpent) elSpent.textContent = formatVND(totalExpense);
+  if (elLimit) elLimit.textContent = formatVND(limit);
 
-  // Bảng giao dịch mẫu
+  if (limit <= 0) {
+    if (elBar) elBar.style.width = '0%';
+    if (alertText) alertText.textContent = 'Chưa đặt hạn mức ngân sách cho tháng này. Bấm "Đặt hạn mức" để quản lý chi tiêu!';
+    if (alertBox) {
+      alertBox.style.display = 'flex';
+      alertBox.style.backgroundColor = 'var(--bg-control)';
+      alertBox.style.color = 'var(--text-secondary)';
+    }
+    return;
+  }
+
+  const pct = Math.min(Math.round((totalExpense / limit) * 100), 100);
+  const remaining = limit - totalExpense;
+
+  if (elBar) {
+    elBar.style.width = `${pct}%`;
+    if (totalExpense > limit) {
+      elBar.style.backgroundColor = 'var(--expense)';
+    } else if (pct >= 80) {
+      elBar.style.backgroundColor = 'var(--budget-warn)';
+    } else {
+      elBar.style.backgroundColor = 'var(--primary)';
+    }
+  }
+
+  if (alertBox && alertText) {
+    alertBox.style.display = 'flex';
+    if (totalExpense > limit) {
+      const over = totalExpense - limit;
+      alertBox.style.backgroundColor = 'var(--expense-bg)';
+      alertBox.style.color = 'var(--expense)';
+      alertText.textContent = `Cảnh báo: Bạn đã chi vượt hạn mức ${formatVND(over)} (${Math.round((totalExpense / limit) * 100)}%).`;
+    } else if (pct >= 80) {
+      alertBox.style.backgroundColor = 'var(--budget-warn-bg)';
+      alertBox.style.color = 'var(--budget-warn-text)';
+      alertText.textContent = `Bạn đã dùng ${pct}% ngân sách. Còn lại ${formatVND(remaining)} cho các ngày tiếp theo.`;
+    } else {
+      alertBox.style.backgroundColor = 'var(--income-bg)';
+      alertBox.style.color = 'var(--income)';
+      alertText.textContent = `Chi tiêu trong tầm kiểm soát: Đã dùng ${pct}% ngân sách. Còn lại ${formatVND(remaining)}.`;
+    }
+  }
+}
+
+// Render dropdown danh mục lọc
+function renderCategoryFilterDropdown() {
+  const select = document.getElementById('filter-category');
+  if (!select) return;
+
+  const monthTx = getTransactionsForCurrentMonth();
+  const usedCats = [...new Set(monthTx.map(t => t.category))].filter(Boolean);
+
+  let html = `<option value="all">Tất cả danh mục</option>`;
+  usedCats.forEach(cat => {
+    const isSelected = state.filterCategory === cat ? 'selected' : '';
+    html += `<option value="${cat}" ${isSelected}>${cat}</option>`;
+  });
+
+  select.innerHTML = html;
+}
+
+// Render bảng giao dịch
+function renderTransactionsTable() {
   const tbody = document.getElementById('transactions-table-body');
-  if (tbody) {
-    const sampleRows = [
-      { date: '28/10/2026', cat: 'Ăn uống', note: 'Cà phê với nhóm', amount: '− 45.000 ₫', isIncome: false, bg: '#FFF1E6', fg: '#9A3412', ini: 'Ă' },
-      { date: '27/10/2026', cat: 'Đi lại', note: 'Đổ xăng', amount: '− 80.000 ₫', isIncome: false, bg: '#E0F2FE', fg: '#075985', ini: 'Đ' },
-      { date: '25/10/2026', cat: 'Học tập', note: 'Mua giáo trình JavaScript', amount: '− 150.000 ₫', isIncome: false, bg: '#EDE9FE', fg: '#5B21B6', ini: 'H' },
-      { date: '24/10/2026', cat: 'Lương', note: 'Lương part-time tháng 10', amount: '+ 3.500.000 ₫', isIncome: true, bg: '#E7F6EF', fg: '#065F46', ini: 'L' },
-      { date: '22/10/2026', cat: 'Hóa đơn', note: 'Tiền điện nước', amount: '− 420.000 ₫', isIncome: false, bg: '#FEF3C7', fg: '#92400E', ini: 'H' },
-      { date: '20/10/2026', cat: 'Mua sắm', note: 'Áo khoác', amount: '− 350.000 ₫', isIncome: false, bg: '#FCE7F3', fg: '#9D174D', ini: 'M' },
-      { date: '18/10/2026', cat: 'Giải trí', note: 'Vé xem phim', amount: '− 110.000 ₫', isIncome: false, bg: '#E0E7FF', fg: '#3730A3', ini: 'G' },
-      { date: '15/10/2026', cat: 'Học bổng', note: 'Học bổng kỳ 1', amount: '+ 5.000.000 ₫', isIncome: true, bg: '#E7F6EF', fg: '#065F46', ini: 'H' }
-    ];
+  const countLabel = document.getElementById('tx-total-count');
+  if (!tbody) return;
 
-    tbody.innerHTML = sampleRows.map((t, idx) => `
+  const list = getFilteredTransactions();
+
+  if (countLabel) {
+    countLabel.textContent = `Hiển thị ${list.length} giao dịch`;
+  }
+
+  if (list.length === 0) {
+    tbody.innerHTML = `
       <tr>
-        <td class="td-date">${t.date}</td>
+        <td colspan="5">
+          <div class="empty-state">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+            <p>Không có giao dịch nào phù hợp trong tháng ${state.selectedMonth}/${state.selectedYear}.</p>
+          </div>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = list.map(t => {
+    const meta = getCategoryMeta(t.category);
+    const isIncome = t.type === 'income';
+    const sign = isIncome ? '+' : '−';
+    const amountColorClass = isIncome ? 'text-income' : 'text-expense';
+    const amountFormatted = `${sign} ${formatVND(t.amount)}`;
+
+    return `
+      <tr data-id="${t.id}">
+        <td class="td-date">${formatDateDisplay(t.date)}</td>
         <td>
           <span class="cat-badge-wrap">
-            <span class="cat-avatar" style="background-color: ${t.bg}; color: ${t.fg};">${t.ini}</span>
-            <span class="cat-name">${t.cat}</span>
+            <span class="cat-avatar" style="background-color: ${meta.bg}; color: ${meta.fg};">${meta.ini}</span>
+            <span class="cat-name">${t.category}</span>
           </span>
         </td>
-        <td class="td-note" title="${t.note}">${t.note}</td>
-        <td class="td-amount ${t.isIncome ? 'text-income' : 'text-expense'}">${t.amount}</td>
+        <td class="td-note" title="${t.note || ''}">${t.note || '—'}</td>
+        <td class="td-amount ${amountColorClass}">${amountFormatted}</td>
         <td class="td-actions">
-          <button type="button" class="btn-action-icon" aria-label="Sửa giao dịch" onclick="openEditModalSample(${idx})">
+          <button type="button" class="btn-action-icon btn-action-edit" data-id="${t.id}" aria-label="Sửa giao dịch">
             <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 20h9"></path>
               <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path>
             </svg>
           </button>
-          <button type="button" class="btn-action-icon btn-action-delete" aria-label="Xóa giao dịch" onclick="openDeleteModalSample(${idx})">
+          <button type="button" class="btn-action-icon btn-action-delete" data-id="${t.id}" aria-label="Xóa giao dịch">
             <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
@@ -100,191 +470,543 @@ function renderPreviewData() {
           </button>
         </td>
       </tr>
-    `).join('');
+    `;
+  }).join('');
 
-    const countLabel = document.getElementById('tx-total-count');
-    if (countLabel) countLabel.textContent = 'Xem tất cả 8 giao dịch';
-  }
+  // Bắt sự kiện bấm nút Sửa / Xóa trên từng hàng
+  tbody.querySelectorAll('.btn-action-edit').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditModal(btn.dataset.id);
+    });
+  });
 
-  // Thống kê danh mục mẫu
+  tbody.querySelectorAll('.btn-action-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openDeleteModal(btn.dataset.id);
+    });
+  });
+
+  // Bấm vào hàng cũng có thể mở sửa giao dịch
+  tbody.querySelectorAll('tr').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.id;
+      if (id) openEditModal(id);
+    });
+    row.style.cursor = 'pointer';
+  });
+}
+
+// Render phân bổ chi theo danh mục
+function renderCategoryStats() {
   const catList = document.getElementById('category-stats-list');
   const catTotal = document.getElementById('cat-stats-total');
-  if (catTotal) catTotal.textContent = 'Tổng chi 5.230.000 ₫';
+  if (!catList) return;
 
-  if (catList) {
-    const sampleCats = [
-      { name: 'Ăn uống', amount: '1.990.000 ₫', pct: '38%', width: '100%', color: '#1D4ED8' },
-      { name: 'Hóa đơn', amount: '1.150.000 ₫', pct: '22%', width: '58%', color: '#3B82F6' },
-      { name: 'Đi lại', amount: '730.000 ₫', pct: '14%', width: '37%', color: '#60A5FA' },
-      { name: 'Mua sắm', amount: '630.000 ₫', pct: '12%', width: '32%', color: '#D97706' },
-      { name: 'Học tập', amount: '470.000 ₫', pct: '9%', width: '24%', color: '#F59E0B' },
-      { name: 'Giải trí', amount: '260.000 ₫', pct: '5%', width: '13%', color: '#94A3B8' }
-    ];
+  const monthTx = getTransactionsForCurrentMonth();
+  const expenseTx = monthTx.filter(t => t.type === 'expense');
+  const totalExpense = expenseTx.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    catList.innerHTML = sampleCats.map(c => `
+  if (catTotal) {
+    catTotal.textContent = `Tổng chi ${formatVND(totalExpense)}`;
+  }
+
+  if (expenseTx.length === 0 || totalExpense === 0) {
+    catList.innerHTML = `<div class="empty-state" style="padding: 24px 0;"><p>Chưa có khoản chi nào trong tháng.</p></div>`;
+    return;
+  }
+
+  // Gom nhóm tổng chi theo từng danh mục
+  const catMap = {};
+  expenseTx.forEach(t => {
+    catMap[t.category] = (catMap[t.category] || 0) + (Number(t.amount) || 0);
+  });
+
+  // Chuyển sang mảng và sắp xếp chi nhiều nhất lên đầu
+  const sorted = Object.entries(catMap)
+    .map(([name, amount]) => ({
+      name,
+      amount,
+      pctNum: Math.round((amount / totalExpense) * 100)
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const colors = ['#1D4ED8', '#3B82F6', '#60A5FA', '#D97706', '#F59E0B', '#94A3B8', '#64748B'];
+
+  catList.innerHTML = sorted.map((c, idx) => {
+    const color = colors[idx % colors.length];
+    return `
       <div class="category-item">
         <div class="category-item-header">
           <span class="category-item-name">${c.name}</span>
-          <span class="category-item-stats">${c.amount} · <strong>${c.pct}</strong></span>
+          <span class="category-item-stats">${formatVND(c.amount)} · <strong>${c.pctNum}%</strong></span>
         </div>
         <div class="category-track">
-          <div class="category-fill" style="width: ${c.width}; background-color: ${c.color};"></div>
+          <div class="category-fill" style="width: ${c.pctNum}%; background-color: ${color};"></div>
         </div>
       </div>
-    `).join('');
-  }
-
-  // Render danh mục vào form radio grid
-  renderFormCategories('expense');
+    `;
+  }).join('');
 }
 
-// Render chip danh mục trong Form Modal
-function renderFormCategories(type = 'expense') {
+// Render lưới radio danh mục trong form Thêm/Sửa
+function renderFormCategoryGrid() {
   const grid = document.getElementById('tx-category-grid');
   if (!grid) return;
 
-  const expenseCategories = [
-    { name: 'Ăn uống', chip: '#FFF1E6', fg: '#9A3412', ini: 'Ă' },
-    { name: 'Đi lại', chip: '#E0F2FE', fg: '#075985', ini: 'Đ' },
-    { name: 'Mua sắm', chip: '#FCE7F3', fg: '#9D174D', ini: 'M' },
-    { name: 'Học tập', chip: '#EDE9FE', fg: '#5B21B6', ini: 'H' },
-    { name: 'Giải trí', chip: '#E0E7FF', fg: '#3730A3', ini: 'G' },
-    { name: 'Hóa đơn', chip: '#FEF3C7', fg: '#92400E', ini: 'H' },
-    { name: 'Khác', chip: '#F1F5F9', fg: '#334155', ini: 'K' }
-  ];
+  const categories = CATEGORY_CONFIG[state.formType] || CATEGORY_CONFIG.expense;
 
-  const incomeCategories = [
-    { name: 'Lương', chip: '#E7F6EF', fg: '#065F46', ini: 'L' },
-    { name: 'Học bổng', chip: '#E7F6EF', fg: '#065F46', ini: 'H' },
-    { name: 'Được cho', chip: '#FEF3C7', fg: '#92400E', ini: 'Đ' },
-    { name: 'Khác', chip: '#F1F5F9', fg: '#334155', ini: 'K' }
-  ];
+  // Nếu danh mục đang chọn không thuộc loại mới, mặc định chọn cái đầu tiên
+  const isCurrentValid = categories.some(c => c.name === state.selectedCategoryName);
+  if (!isCurrentValid && categories.length > 0) {
+    state.selectedCategoryName = categories[0].name;
+  }
 
-  const list = type === 'income' ? incomeCategories : expenseCategories;
-  grid.innerHTML = list.map((c, i) => `
-    <button type="button" class="cat-radio-card ${i === 0 ? 'selected' : ''}" data-cat="${c.name}">
-      <span class="cat-chip" style="background-color: ${c.chip}; color: ${c.fg};">${c.ini}</span>
-      <span>${c.name}</span>
-    </button>
-  `).join('');
+  grid.innerHTML = categories.map(c => {
+    const isSelected = c.name === state.selectedCategoryName ? 'selected' : '';
+    return `
+      <button type="button" class="cat-radio-card ${isSelected}" data-cat="${c.name}">
+        <span class="cat-chip" style="background-color: ${c.bg}; color: ${c.fg};">${c.ini}</span>
+        <span>${c.name}</span>
+      </button>
+    `;
+  }).join('');
 
-  // Bắt sự kiện chọn danh mục
   grid.querySelectorAll('.cat-radio-card').forEach(btn => {
     btn.addEventListener('click', () => {
       grid.querySelectorAll('.cat-radio-card').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
+      state.selectedCategoryName = btn.dataset.cat;
+      // Ẩn lỗi nếu đã chọn
+      const err = document.getElementById('tx-category-error');
+      if (err) err.hidden = true;
     });
   });
 }
 
-// Quản lý Modal (Mở / Đóng)
-function initModals() {
-  const modalTx = document.getElementById('modal-tx');
-  const modalDelete = document.getElementById('modal-delete');
-  const modalBudget = document.getElementById('modal-budget');
+// ==========================================================================
+// 7. Xử lý Form Thêm / Sửa Giao Dịch (CRUD)
+// ==========================================================================
+function openAddModal() {
+  state.editingId = null;
+  const modal = document.getElementById('modal-tx');
+  const title = document.getElementById('modal-tx-title');
+  const form = document.getElementById('tx-form');
+  const editIdInput = document.getElementById('tx-edit-id');
 
+  if (title) title.textContent = 'Thêm giao dịch';
+  if (editIdInput) editIdInput.value = '';
+  if (form) form.reset();
+
+  // Mặc định là Khoản chi
+  setFormType('expense');
+
+  // Mặc định ngày hôm nay hoặc ngày trong tháng đang chọn
+  const today = new Date();
+  const isCurrentMonthView = today.getFullYear() === state.selectedYear && (today.getMonth() + 1) === state.selectedMonth;
+  const defaultDateStr = isCurrentMonthView
+    ? today.toISOString().split('T')[0]
+    : `${state.selectedYear}-${String(state.selectedMonth).padStart(2, '0')}-01`;
+
+  const dateInput = document.getElementById('tx-date');
+  if (dateInput) dateInput.value = defaultDateStr;
+
+  clearFormValidationErrors();
+  updateNoteCharCount();
+
+  if (modal) modal.removeAttribute('hidden');
+}
+
+function openEditModal(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+
+  state.editingId = id;
+  const modal = document.getElementById('modal-tx');
+  const title = document.getElementById('modal-tx-title');
+  const editIdInput = document.getElementById('tx-edit-id');
+  const amountInput = document.getElementById('tx-amount');
+  const dateInput = document.getElementById('tx-date');
+  const paymentSelect = document.getElementById('tx-payment');
+  const noteTextarea = document.getElementById('tx-note');
+
+  if (title) title.textContent = 'Sửa giao dịch';
+  if (editIdInput) editIdInput.value = tx.id;
+  if (amountInput) amountInput.value = (Number(tx.amount) || 0).toLocaleString('vi-VN');
+  if (dateInput) dateInput.value = tx.date;
+  if (paymentSelect) paymentSelect.value = tx.paymentMethod || 'Tiền mặt';
+  if (noteTextarea) noteTextarea.value = tx.note || '';
+
+  state.selectedCategoryName = tx.category;
+  setFormType(tx.type);
+
+  clearFormValidationErrors();
+  updateNoteCharCount();
+
+  if (modal) modal.removeAttribute('hidden');
+}
+
+function setFormType(type) {
+  state.formType = type;
+  const btnIncome = document.getElementById('btn-type-income');
+  const btnExpense = document.getElementById('btn-type-expense');
+
+  if (type === 'income') {
+    if (btnIncome) btnIncome.classList.add('active');
+    if (btnExpense) btnExpense.classList.remove('active');
+  } else {
+    if (btnExpense) btnExpense.classList.add('active');
+    if (btnIncome) btnIncome.classList.remove('active');
+  }
+
+  renderFormCategoryGrid();
+}
+
+function clearFormValidationErrors() {
+  const amountWrap = document.getElementById('tx-amount-wrap');
+  const amountErr = document.getElementById('tx-amount-error');
+  const catErr = document.getElementById('tx-category-error');
+
+  if (amountWrap) amountWrap.classList.remove('has-error');
+  if (amountErr) amountErr.hidden = true;
+  if (catErr) catErr.hidden = true;
+}
+
+function updateNoteCharCount() {
+  const noteInput = document.getElementById('tx-note');
+  const countEl = document.getElementById('tx-note-count');
+  if (noteInput && countEl) {
+    countEl.textContent = `${noteInput.value.length}/100 ký tự`;
+  }
+}
+
+// Xử lý Submit Form Thêm/Sửa
+function handleSaveTransaction(e) {
+  e.preventDefault();
+
+  const amountInput = document.getElementById('tx-amount');
+  const amountWrap = document.getElementById('tx-amount-wrap');
+  const amountErr = document.getElementById('tx-amount-error');
+  const catErr = document.getElementById('tx-category-error');
+  const dateInput = document.getElementById('tx-date');
+  const paymentSelect = document.getElementById('tx-payment');
+  const noteInput = document.getElementById('tx-note');
+
+  let hasError = false;
+
+  // 1. Kiểm tra số tiền
+  const rawAmount = parseCurrencyInput(amountInput ? amountInput.value : '');
+  if (!rawAmount || rawAmount <= 0) {
+    if (amountWrap) amountWrap.classList.add('has-error');
+    if (amountErr) amountErr.hidden = false;
+    hasError = true;
+  } else {
+    if (amountWrap) amountWrap.classList.remove('has-error');
+    if (amountErr) amountErr.hidden = true;
+  }
+
+  // 2. Kiểm tra danh mục
+  if (!state.selectedCategoryName) {
+    if (catErr) catErr.hidden = false;
+    hasError = true;
+  } else {
+    if (catErr) catErr.hidden = true;
+  }
+
+  // 3. Kiểm tra ngày
+  const dateVal = dateInput ? dateInput.value.trim() : '';
+  if (!dateVal) {
+    hasError = true;
+  }
+
+  if (hasError) return;
+
+  const payload = {
+    type: state.formType,
+    amount: rawAmount,
+    category: state.selectedCategoryName,
+    date: dateVal,
+    paymentMethod: paymentSelect ? paymentSelect.value : 'Tiền mặt',
+    note: noteInput ? noteInput.value.trim() : ''
+  };
+
+  if (state.editingId) {
+    // Sửa giao dịch đã có
+    const index = state.transactions.findIndex(t => t.id === state.editingId);
+    if (index !== -1) {
+      state.transactions[index] = {
+        ...state.transactions[index],
+        ...payload
+      };
+    }
+  } else {
+    // Thêm giao dịch mới
+    const newTx = {
+      id: 'tx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      ...payload,
+      createdAt: Date.now()
+    };
+    state.transactions.unshift(newTx);
+  }
+
+  saveTransactionsToStorage();
+  closeModal('modal-tx');
+  renderAll();
+}
+
+// ==========================================================================
+// 8. Xử lý Modal Xóa Giao Dịch
+// ==========================================================================
+function openDeleteModal(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+
+  state.deletingId = id;
+  const modal = document.getElementById('modal-delete');
+  const noteEl = document.getElementById('delete-summary-note');
+  const subEl = document.getElementById('delete-summary-sub');
+  const amountEl = document.getElementById('delete-summary-amount');
+
+  if (noteEl) noteEl.textContent = tx.note || tx.category;
+  if (subEl) subEl.textContent = `${tx.category} · ${formatDateDisplay(tx.date)}`;
+  if (amountEl) {
+    const sign = tx.type === 'income' ? '+' : '−';
+    amountEl.textContent = `${sign} ${formatVND(tx.amount)}`;
+    amountEl.style.color = tx.type === 'income' ? 'var(--income)' : 'var(--expense)';
+  }
+
+  if (modal) modal.removeAttribute('hidden');
+}
+
+function handleConfirmDelete() {
+  if (!state.deletingId) return;
+
+  state.transactions = state.transactions.filter(t => t.id !== state.deletingId);
+  state.deletingId = null;
+
+  saveTransactionsToStorage();
+  closeModal('modal-delete');
+  renderAll();
+}
+
+// ==========================================================================
+// 9. Xử lý Hạn Mức Ngân Sách
+// ==========================================================================
+function openBudgetModal() {
+  const modal = document.getElementById('modal-budget');
+  const input = document.getElementById('budget-input');
+  const monthKey = getCurrentMonthKey();
+  const currentLimit = state.budgets[monthKey] || 0;
+
+  if (input) {
+    input.value = currentLimit ? currentLimit.toLocaleString('vi-VN') : '';
+  }
+
+  const err = document.getElementById('budget-error');
+  if (err) err.hidden = true;
+
+  if (modal) modal.removeAttribute('hidden');
+}
+
+function handleSaveBudget(e) {
+  e.preventDefault();
+  const input = document.getElementById('budget-input');
+  const err = document.getElementById('budget-error');
+
+  const rawVal = parseCurrencyInput(input ? input.value : '');
+  if (rawVal < 0) {
+    if (err) err.hidden = false;
+    return;
+  }
+
+  const monthKey = getCurrentMonthKey();
+  state.budgets[monthKey] = rawVal;
+
+  saveBudgetsToStorage();
+  closeModal('modal-budget');
+  renderBudgetWidget();
+}
+
+// ==========================================================================
+// 10. Chuyển đổi Tháng & Bộ Lọc
+// ==========================================================================
+function changeMonth(delta) {
+  state.selectedMonth += delta;
+  if (state.selectedMonth > 12) {
+    state.selectedMonth = 1;
+    state.selectedYear += 1;
+  } else if (state.selectedMonth < 1) {
+    state.selectedMonth = 12;
+    state.selectedYear -= 1;
+  }
+  renderAll();
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) modal.setAttribute('hidden', '');
+}
+
+// ==========================================================================
+// 11. Theme & Dark Mode Toggle
+// ==========================================================================
+function initTheme() {
+  const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+
+  const toggleBtn = document.getElementById('theme-toggle');
+  const mobileSettingsBtn = document.getElementById('bottom-nav-settings');
+
+  function toggleTheme(e) {
+    if (e) e.preventDefault();
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem(STORAGE_KEYS.THEME, newTheme);
+  }
+
+  if (toggleBtn) toggleBtn.addEventListener('click', toggleTheme);
+  if (mobileSettingsBtn) mobileSettingsBtn.addEventListener('click', toggleTheme);
+
+  // Phím tắt F11
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F11') {
+      e.preventDefault();
+      toggleTheme();
+    }
+  });
+}
+
+// ==========================================================================
+// 12. Gán các sự kiện toàn cục (Event Listeners)
+// ==========================================================================
+function setupEventListeners() {
+  // 1. Chuyển tháng
+  const btnPrev = document.getElementById('btn-prev-month');
+  const btnNext = document.getElementById('btn-next-month');
+  if (btnPrev) btnPrev.addEventListener('click', () => changeMonth(-1));
+  if (btnNext) btnNext.addEventListener('click', () => changeMonth(1));
+
+  // 2. Mở modal thêm giao dịch
   const btnOpenAdd = document.getElementById('btn-open-add-modal');
   const btnFabAdd = document.getElementById('btn-fab-add');
+  if (btnOpenAdd) btnOpenAdd.addEventListener('click', openAddModal);
+  if (btnFabAdd) btnFabAdd.addEventListener('click', openAddModal);
+
+  // 3. Đóng modal thêm/sửa
   const btnCloseTx = document.getElementById('btn-close-tx-modal');
   const btnCancelTx = document.getElementById('btn-cancel-tx');
+  if (btnCloseTx) btnCloseTx.addEventListener('click', () => closeModal('modal-tx'));
+  if (btnCancelTx) btnCancelTx.addEventListener('click', () => closeModal('modal-tx'));
 
+  // 4. Toggle Thu/Chi trong form
+  const btnIncome = document.getElementById('btn-type-income');
+  const btnExpense = document.getElementById('btn-type-expense');
+  if (btnIncome) btnIncome.addEventListener('click', () => setFormType('income'));
+  if (btnExpense) btnExpense.addEventListener('click', () => setFormType('expense'));
+
+  // 5. Submit Form Thêm/Sửa
+  const formTx = document.getElementById('tx-form');
+  if (formTx) formTx.addEventListener('submit', handleSaveTransaction);
+
+  // 6. Format số tiền khi gõ
+  const amountInput = document.getElementById('tx-amount');
+  if (amountInput) {
+    amountInput.addEventListener('input', () => {
+      const num = parseCurrencyInput(amountInput.value);
+      amountInput.value = num ? num.toLocaleString('vi-VN') : '';
+      const amountWrap = document.getElementById('tx-amount-wrap');
+      const amountErr = document.getElementById('tx-amount-error');
+      if (num > 0) {
+        if (amountWrap) amountWrap.classList.remove('has-error');
+        if (amountErr) amountErr.hidden = true;
+      }
+    });
+  }
+
+  // 7. Đếm ký tự ghi chú
+  const noteInput = document.getElementById('tx-note');
+  if (noteInput) noteInput.addEventListener('input', updateNoteCharCount);
+
+  // 8. Modal Xóa giao dịch
+  const btnCancelDel = document.getElementById('btn-cancel-delete');
+  const btnConfirmDel = document.getElementById('btn-confirm-delete');
+  if (btnCancelDel) btnCancelDel.addEventListener('click', () => closeModal('modal-delete'));
+  if (btnConfirmDel) btnConfirmDel.addEventListener('click', handleConfirmDelete);
+
+  // 9. Modal Ngân sách
   const btnOpenBudget = document.getElementById('btn-open-budget-modal');
   const btnCloseBudget = document.getElementById('btn-close-budget-modal');
   const btnCancelBudget = document.getElementById('btn-cancel-budget');
+  const formBudget = document.getElementById('budget-form');
+  const budgetInput = document.getElementById('budget-input');
 
-  const btnCancelDelete = document.getElementById('btn-cancel-delete');
-
-  function openModal(modal) {
-    if (modal) modal.removeAttribute('hidden');
+  if (btnOpenBudget) btnOpenBudget.addEventListener('click', openBudgetModal);
+  if (btnCloseBudget) btnCloseBudget.addEventListener('click', () => closeModal('modal-budget'));
+  if (btnCancelBudget) btnCancelBudget.addEventListener('click', () => closeModal('modal-budget'));
+  if (formBudget) formBudget.addEventListener('submit', handleSaveBudget);
+  if (budgetInput) {
+    budgetInput.addEventListener('input', () => {
+      const num = parseCurrencyInput(budgetInput.value);
+      budgetInput.value = num ? num.toLocaleString('vi-VN') : '';
+    });
   }
 
-  function closeModal(modal) {
-    if (modal) modal.setAttribute('hidden', '');
-  }
-
-  // Mở modal thêm
-  if (btnOpenAdd) btnOpenAdd.addEventListener('click', () => {
-    document.getElementById('modal-tx-title').textContent = 'Thêm giao dịch';
-    document.getElementById('tx-date').value = new Date().toISOString().split('T')[0];
-    openModal(modalTx);
+  // 10. Đóng modal khi bấm ra ngoài backdrop hoặc nhấn Esc
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeModal('modal-tx');
+      closeModal('modal-delete');
+      closeModal('modal-budget');
+    }
   });
 
-  if (btnFabAdd) btnFabAdd.addEventListener('click', () => {
-    document.getElementById('modal-tx-title').textContent = 'Thêm giao dịch';
-    document.getElementById('tx-date').value = new Date().toISOString().split('T')[0];
-    openModal(modalTx);
-  });
-
-  // Đóng modal thêm
-  if (btnCloseTx) btnCloseTx.addEventListener('click', () => closeModal(modalTx));
-  if (btnCancelTx) btnCancelTx.addEventListener('click', () => closeModal(modalTx));
-
-  // Modal Ngân sách
-  if (btnOpenBudget) btnOpenBudget.addEventListener('click', () => openModal(modalBudget));
-  if (btnCloseBudget) btnCloseBudget.addEventListener('click', () => closeModal(modalBudget));
-  if (btnCancelBudget) btnCancelBudget.addEventListener('click', () => closeModal(modalBudget));
-
-  // Modal Xóa
-  if (btnCancelDelete) btnCancelDelete.addEventListener('click', () => closeModal(modalDelete));
-
-  // Đóng khi click ngoài backdrop
-  [modalTx, modalDelete, modalBudget].forEach(m => {
-    if (m) {
-      m.addEventListener('click', (e) => {
-        if (e.target === m) closeModal(m);
+  ['modal-tx', 'modal-delete', 'modal-budget'].forEach(id => {
+    const modal = document.getElementById(id);
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal(id);
       });
     }
   });
 
-  // Toggle Loại Thu / Chi trong modal
-  const btnIncome = document.getElementById('btn-type-income');
-  const btnExpense = document.getElementById('btn-type-expense');
-
-  if (btnIncome && btnExpense) {
-    btnIncome.addEventListener('click', () => {
-      btnIncome.classList.add('active');
-      btnExpense.classList.remove('active');
-      renderFormCategories('income');
+  // 11. Bộ lọc loại giao dịch (Tất cả / Thu / Chi)
+  const filterTypeButtons = document.querySelectorAll('.type-filter-btn');
+  filterTypeButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterTypeButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.filterType = btn.dataset.type || 'all';
+      renderTransactionsTable();
     });
+  });
 
-    btnExpense.addEventListener('click', () => {
-      btnExpense.classList.add('active');
-      btnIncome.classList.remove('active');
-      renderFormCategories('expense');
+  // 12. Bộ lọc danh mục
+  const filterCatSelect = document.getElementById('filter-category');
+  if (filterCatSelect) {
+    filterCatSelect.addEventListener('change', (e) => {
+      state.filterCategory = e.target.value;
+      renderTransactionsTable();
     });
   }
 
-  // Đếm ký tự ghi chú
-  const noteInput = document.getElementById('tx-note');
-  const noteCount = document.getElementById('tx-note-count');
-  if (noteInput && noteCount) {
-    noteInput.addEventListener('input', () => {
-      noteCount.textContent = `${noteInput.value.length}/100 ký tự`;
+  // 13. Tìm kiếm theo ghi chú
+  const searchInput = document.getElementById('search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      state.searchQuery = e.target.value;
+      renderTransactionsTable();
     });
   }
 }
 
-// Các hàm kiểm tra thử Modal Sửa & Xóa
-window.openEditModalSample = function(idx) {
-  const modalTx = document.getElementById('modal-tx');
-  const title = document.getElementById('modal-tx-title');
-  if (title) title.textContent = 'Sửa giao dịch';
-  const amount = document.getElementById('tx-amount');
-  if (amount) amount.value = '45.000';
-  const note = document.getElementById('tx-note');
-  if (note) note.value = 'Cà phê với nhóm';
-  if (modalTx) modalTx.removeAttribute('hidden');
-};
-
-window.openDeleteModalSample = function(idx) {
-  const modalDelete = document.getElementById('modal-delete');
-  if (modalDelete) modalDelete.removeAttribute('hidden');
-};
-
-// Khởi chạy khi tài liệu sẵn sàng
+// ==========================================================================
+// 13. Khởi chạy khi tài liệu DOM sẵn sàng
+// ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
-  renderPreviewData();
-  initModals();
+  loadDataFromStorage();
+  setupEventListeners();
+  renderAll();
 });
-
